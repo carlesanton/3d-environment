@@ -1,19 +1,22 @@
 import pygame
+import os
 from pygame.locals import *
 import numpy as np
 import time
 from Camera import Camera
-from pyrr import Vector3, matrix44, vector, vector3
-
-
+from pyrr import Vector3, matrix44
+import pickle
+from typing import List
 from OpenGL.GL import *
 from OpenGL.GLU import *
 from OpenGL.GLUT import *
+from visuall_hull_extractor.cam_params_position import get_calibration_matrix_and_external_params
 
 
 #3d enviroment where visual hull wll be represented
 
 
+default_calibartion_images_folder = os.path.join(os.getcwd(), 'visuall_hull_extractor', 'calibration_images')
 
 verticies = (
     (1, -1, -1),
@@ -43,39 +46,38 @@ edges = (
 
 world_size = 50.0
 line_spacing = 4.0
-cam = Camera([0.0,0.5,10.0], [0.0,0.5,0.0])#position=[0.0,-0.5,5] , target=[0.0,0.0,0.0]
+
+current_camera_index = -1
 
 
 ground_points = np.linspace(start = int(-world_size/2.0), stop=int(world_size/2.0), num=int(world_size/line_spacing), endpoint=True)
 
 
 
-def check_boundaries():
+def check_boundaries(cam: Camera):
+   
+    if cam.speed > 0:
+        # X boundaries
+        if cam.position.x<-world_size/2:
+            cam.position.x = -world_size/2
+        if cam.position.x>world_size/2:
+            cam.position.x = world_size/2
 
-    #print(f'borders are: x:+-{world_size/2} y:{0.5} z:+-{world_size/2}')
-    #print(f'position is: x:+-{cam.camera_pos.x} y:{cam.camera_pos.y} z:+-{cam.camera_pos.z}')
-        
-    # X boundaries
-    if cam.camera_pos.x<-world_size/2:
-        cam.camera_pos.x = -world_size/2
-    if cam.camera_pos.x>world_size/2:
-        cam.camera_pos.x = world_size/2
+        # Y boundaries
+        if cam.position.y<0.5:
+            cam.position.y = 0.5
+        if cam.position.y>world_size:
+            cam.position.y = world_size
 
-    # Y boundaries
-    if cam.camera_pos.y<0.5:
-        cam.camera_pos.y = 0.5
-    if cam.camera_pos.y>world_size:
-        cam.camera_pos.y = world_size
-
-    # Z boundaries
-    if cam.camera_pos.z<-world_size/2:
-        cam.camera_pos.z = -world_size/2
-    if cam.camera_pos.z>world_size/2:
-        cam.camera_pos.z = world_size/2
+        # Z boundaries
+        if cam.position.z<-world_size/2:
+            cam.position.z = -world_size/2
+        if cam.position.z>world_size/2:
+            cam.position.z = world_size/2
 
 
-    cam.target = cam.camera_pos - cam.camera_front
-    cam.update_camera_vectors()
+        cam.target = cam.position - cam.z_axis
+        cam.update_camera_vectors()
 
 def Cube():
     glBegin(GL_LINES)
@@ -147,8 +149,6 @@ def ground():
 
     glEnd()
 
-
-
 def plot_axes():
     glBegin(GL_LINES)
     # red X axis
@@ -166,7 +166,7 @@ def plot_axes():
 
     glEnd()
 
-def proces_mouse(prev_pos_x,prev_pos_y,is_mouse_down):
+def proces_mouse_movement(prev_pos_x,prev_pos_y,is_mouse_down, cam: Camera):
     #get mouse position and delta (do after pump events)
     (pos_x,pos_y) = pygame.mouse.get_pos()
     #compute delta of previous and actual position
@@ -186,63 +186,141 @@ def proces_mouse(prev_pos_x,prev_pos_y,is_mouse_down):
 
     return pos_x, pos_y
 
-def proces_keyboard():
-    keys = pygame.key.get_pressed()
-    #print(cam.speed)
-    if keys[pygame.K_LEFT]:
-        cam.move([-1.0* cam.speed,.0* cam.speed,.0* cam.speed])        
-    if keys[pygame.K_RIGHT]:
-        cam.move([1.0* cam.speed,.0* cam.speed,.0* cam.speed])       
-    if keys[pygame.K_UP]:
-        cam.move([.0* cam.speed,.0* cam.speed,-1.0* cam.speed])
-    if keys[pygame.K_DOWN]:
-        cam.move([.0* cam.speed,.0* cam.speed,1.0* cam.speed])
-
-    if keys[pygame.K_a]:
-        cam.rotate(-cam.rot_step,Vector3([0.0,1.,.0]))
-    if keys[pygame.K_s]:
-        cam.rotate(cam.rot_step,Vector3([1.0,0.0,.0]))
-    if keys[pygame.K_d]:
-        cam.rotate(cam.rot_step,Vector3([0.0,1.0,.0]))
-    if keys[pygame.K_w]:
-        cam.rotate(-cam.rot_step,Vector3([1.0,0.0,.0]))
-
-def plot_cam_axes():
+def proces_inputs(camera_list: List[Camera]):
     
-    ofset = Vector3(cam.camera_pos-cam.camera_front*10)
-    #ofset = Vector3([1.0,1.0,1.0])
-    glBegin(GL_LINES)
-    # red X axis
-    glColor3f(1.0,0.0,0.0)
-    glVertex3fv([ofset.x,ofset.y,ofset.z])
-    glVertex3fv([cam.camera_right.x+ofset.x,cam.camera_right.y+ofset.y,cam.camera_right.z+ofset.z])
-    # green Y axis
-    glColor3f(0.0,1.0,0.0)
-    glVertex3fv([ofset.x,ofset.y,ofset.z])
-    glVertex3fv([cam.camera_up.x+ofset.x,cam.camera_up.y+ofset.y,cam.camera_up.z+ofset.z])
-    # blue Z axis
-    glColor3f(0.0,0.0,1.0)
-    glVertex3fv([ofset.x,ofset.y,ofset.z])
-    glVertex3fv([cam.camera_front.x+ofset.x,cam.camera_front.y+ofset.y,cam.camera_front.z+ofset.z])
-
-    #plot camera front begining from 0.0 0.0 0.0
-    glColor3f(1.0,1.0,1.0)
-    glVertex3fv([.0,.0,.0])
-    glVertex3fv([-cam.camera_front.x,-cam.camera_front.y,-cam.camera_front.z])
-   
-
-    glEnd()
+    global current_camera_index
+    global background_show
+    global mouse_pos_x
+    global mouse_pos_y
+    global is_mouse_down
 
 
+    keys = pygame.key.get_pressed()
+    # ARROWS
+    if keys[pygame.K_LEFT]:
+        direction_vector = Vector3([-1.,.0,.0])
+        camera_list[current_camera_index].move(direction_vector*camera_list[current_camera_index].speed)        
+    if keys[pygame.K_RIGHT]:
+        direction_vector = Vector3([1.,.0,.0])
+        camera_list[current_camera_index].move(direction_vector*camera_list[current_camera_index].speed)        
+    if keys[pygame.K_UP]:
+        direction_vector = Vector3([.0,.0,-1.])
+        camera_list[current_camera_index].move(direction_vector*camera_list[current_camera_index].speed)        
+    if keys[pygame.K_DOWN]:
+        direction_vector = Vector3([.0,.0,1.])
+        camera_list[current_camera_index].move(direction_vector*camera_list[current_camera_index].speed)        
+
+    # ASDW
+    if keys[pygame.K_a]:
+        camera_list[current_camera_index].rotate(-camera_list[current_camera_index].rot_step,Vector3([0.0,1.,.0]))
+    if keys[pygame.K_s]:
+        camera_list[current_camera_index].rotate(camera_list[current_camera_index].rot_step,Vector3([1.0,0.0,.0]))
+    if keys[pygame.K_d]:
+        camera_list[current_camera_index].rotate(camera_list[current_camera_index].rot_step,Vector3([0.0,1.0,.0]))
+    if keys[pygame.K_w]:
+        camera_list[current_camera_index].rotate(-camera_list[current_camera_index].rot_step,Vector3([1.0,0.0,.0]))
+
+    # TOGGLE KEYS
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            pygame.quit()
+            quit()
+        # KEY DOWN
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_SPACE:
+                background_show = not  background_show
+            
+            if event.key == pygame.K_LSHIFT or event.key == pygame.K_RSHIFT:
+                camera_list[current_camera_index].speed = camera_list[current_camera_index].speed*4
+
+            if event.key == pygame.K_PLUS:
+                current_camera_index += 1
+                if current_camera_index >= len(camera_list):
+                    current_camera_index = 0
+
+            if event.key == pygame.K_MINUS:
+                current_camera_index -= 1
+                if current_camera_index < 0:
+                    current_camera_index = len(camera_list) - 1
+            
+
+        # MOUSE DOWN
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            if event.button == 1:
+                is_mouse_down = True
+
+
+        # MOUSE UP
+        if event.type == pygame.MOUSEBUTTONUP:
+            if event.button == 1:
+                is_mouse_down = False
+        
+    (mouse_pos_x, mouse_pos_y) = proces_mouse_movement(mouse_pos_x, mouse_pos_y, is_mouse_down, camera_list[current_camera_index])
+
+def create_virtual_cameras_from_real_cameras(calibration_image_folder: str = default_calibartion_images_folder,
+                                             force_recompute: bool = False):
+    
+    if force_recompute:
+        cam_intrisic_parameters, extrinsic_parameters_list = get_calibration_matrix_and_external_params(calibration_image_folder)
+    else:
+        try:
+            with open('camera_data/camera_parameters.pkl', 'rb') as handle:
+                cam_intrisic_parameters = pickle.load(handle)
+            with open('camera_data/external_parameters_list.pkl', 'rb') as handle:
+                extrinsic_parameters_list = pickle.load(handle)
+
+        except:
+            cam_intrisic_parameters, extrinsic_parameters_list = get_calibration_matrix_and_external_params(calibration_image_folder)
+            
+    camera_list: List[Camera] = []
+
+    cam_width = 640
+    cam_height = 480
+    for extrinsic_parameters in extrinsic_parameters_list:
+        focal_length = np.array([cam_intrisic_parameters[0,0],cam_intrisic_parameters[1,1]])
+        cam_rotation, cam_translation, cam_projection = extrinsic_parameters
+        cam_translation = cam_translation/100
+        camera = Camera(position=cam_translation,
+                        target = [.0,.0,.0],
+                        camera_matrix = cam_intrisic_parameters.T,
+                        camera_rotation = cam_rotation,
+                        camera_translation = cam_translation,
+                        camera_projection = cam_projection,
+                        display_height=cam_height, 
+                        display_width=cam_width,
+                        speed=0.,
+                        rot_step = 0.,
+                        )
+        camera_list.append(camera)
+        print(f'camera translation: {cam_translation}')
+
+    return camera_list
+
+def render_virtual_cameras(camera_list: List[Camera]):
+    for camera in camera_list:
+        if camera.has_to_render:
+            camera.render_camera()
 
 
 def main():
     pygame.init()
-    display = (800,600)
+    display = (1200,600)
+    
+    global background_show
+    global mouse_pos_x
+    global mouse_pos_y
+    global is_mouse_down
     background_show = True
     ttt = time.time()
     show_time = True
     is_mouse_down = False
+
+    global current_camera_index
+    camera_list = create_virtual_cameras_from_real_cameras(force_recompute=True)
+    camera_list.append(Camera(position=[0.0,0.5,10.0], target=[0.0,0.0,0.0], has_to_render_image_plane=False))
+    
+    current_camera_index = len(camera_list) - 1
+
 
 
     print_pos = False
@@ -253,47 +331,19 @@ def main():
     pygame.display.set_mode(display, DOUBLEBUF|OPENGL)
 
 
-    # prespective =  matrix44.create_perspective_projection(45, (display[0]/display[1]), 0.1, 500.0) 
     glMatrixMode(GL_PROJECTION)
-    gluPerspective(45, (display[0]/display[1]), 0.1, 500.0)
+    gluPerspective(camera_list[current_camera_index].fov[1], (display[0]/display[1]), 0.1, 500.0)
     while True:
         pygame.time.delay(10)
 
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                pygame.quit()
-                quit()
-            # keyboard key down
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_SPACE:
-                    background_show = not  background_show
-                
-                if event.key == pygame.K_LSHIFT or event.key == pygame.K_RSHIFT:
-                    cam.speed = cam.speed*4
-                
-
-            # mouse button down
-            if event.type == pygame.MOUSEBUTTONDOWN:
-                # left click
-                if event.button == 1:
-                    is_mouse_down = True
-
-
-            # mouse button up
-            if event.type == pygame.MOUSEBUTTONUP:
-                # right click
-                if event.button == 1:
-                    is_mouse_down = False
-        
-
-        (mouse_pos_x, mouse_pos_y) = proces_mouse(mouse_pos_x, mouse_pos_y, is_mouse_down)
-        proces_keyboard()
-        check_boundaries()
-        glMatrixMode (GL_MODELVIEW)
+        proces_inputs(camera_list)
+        check_boundaries(camera_list[current_camera_index])
+        glMatrixMode(GL_MODELVIEW)
         glLoadIdentity()
-        #glLoadMatrixf(cam.get_view_matrix())
-        #glTranslate(-cam.camera_pos.x,-cam.camera_pos.y,-cam.camera_pos.z)
-        cam.cam_lookat()
+        camera_list[current_camera_index].cam_lookat()
+        glMatrixMode(GL_PROJECTION)
+        glLoadIdentity()
+        gluPerspective(50, (display[0]/display[1]), 0.1, 100.0)
         if print_modelview:
             a = (GLfloat * 16)()
             mvm = glGetFloatv(GL_MODELVIEW_MATRIX, a)
@@ -301,16 +351,19 @@ def main():
             print(np.asarray(list(a)).reshape((4,4)))
             print('--------------')
             print('Computed look at matrix: ')
-            print(cam.get_view_matrix())
-            print('Camera position: ' + str(cam.camera_pos))
+            print(camera_list[current_camera_index].get_view_matrix())
+            print('Camera position: ' + str(camera_list[current_camera_index].position))
             print('----------------------------')
         if print_pos:
-            print(str(cam.camera_pos) + ' ||||x ' + str(cam.camera_right) + ' ||||y ' +str(cam.camera_up) + ' ||||z ' + str(cam.camera_front))
+            print(str(camera_list[current_camera_index].position) + ' ||||x ' + str(camera_list[current_camera_index].x_axis) + ' ||||y ' +str(camera_list[current_camera_index].y_axis) + ' ||||z ' + str(camera_list[current_camera_index].z_axis))
         
         glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
-        Cube()
+        
+        camera_list[0].project_3d_point_into_image_plane_opencv(Vector3([0.,0.,0.]))
+
+        render_virtual_cameras(camera_list)
         plot_axes()
-        plot_cam_axes()
+        Cube()
         if background_show:
             ground()
         pygame.display.flip()
