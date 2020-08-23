@@ -1,5 +1,5 @@
-import pygame
 import os
+import pygame
 from pygame.locals import *
 import numpy as np
 import time
@@ -11,9 +11,10 @@ from OpenGL.GL import *
 from OpenGL.GLU import *
 from OpenGL.GLUT import *
 from visuall_hull_extractor.cam_params_position import get_calibration_matrix_and_external_params
+from visuall_hull_extractor.utils.visual_vull import VoxelGrid
+from visuall_hull_extractor.utils.visual_vull import VHullShader
+import cv2
 
-
-#3d enviroment where visual hull wll be represented
 
 
 default_calibartion_images_folder = os.path.join(os.getcwd(), 'visuall_hull_extractor', 'calibration_images')
@@ -45,13 +46,18 @@ edges = (
 
 
 world_size = 50.0
-line_spacing = 4.0
+world_line_spacing = 4.0
+
+figure_render_size = 10.0
+figure_voxel_size = 2
 
 current_camera_index = -1
 
 
-ground_points = np.linspace(start = int(-world_size/2.0), stop=int(world_size/2.0), num=int(world_size/line_spacing), endpoint=True)
+ground_points = np.linspace(start = int(-world_size/2.0), stop=int(world_size/2.0), num=int(world_size/world_line_spacing), endpoint=True)
+figure_space_points = np.linspace(start = int(-figure_render_size/2.0), stop=int(figure_render_size/2.0), num=int(figure_render_size/figure_voxel_size), endpoint=False)
 
+model_voxel_space = VoxelGrid(figure_space_points)
 
 
 def check_boundaries(cam: Camera):
@@ -79,6 +85,15 @@ def check_boundaries(cam: Camera):
         cam.target = cam.position - cam.z_axis
         cam.update_camera_vectors()
 
+def square():
+    # glColor3f(1.0, 0.0, 3.0)
+    glBegin(GL_QUADS)
+    glVertex2f(100, 100)
+    glVertex2f(200, 100)
+    glVertex2f(200, 200)
+    glVertex2f(100, 200)
+    glEnd()
+
 def Cube():
     glBegin(GL_LINES)
     glColor3f(1.0,1.0,1.0)
@@ -87,65 +102,67 @@ def Cube():
             glVertex3fv(verticies[vertex])
     glEnd()
 
-def ground():
+def ground(ground_points):
     glBegin(GL_LINES)
     glColor3f(1.0,1.0,1.0)
     
+    max_pos = max(ground_points)
+    min_pos = min(ground_points)
     # #############################################
     # ground lines
     for line in ground_points:
         
         # vertical lines
-        glVertex3fv((line,0,world_size/2))
-        glVertex3fv((line,0,-world_size/2))
+        glVertex3fv((line,0,max_pos))
+        glVertex3fv((line,0,min_pos))
         # horizontal lines
-        glVertex3fv((world_size/2,0, line))
-        glVertex3fv((-world_size/2,0,line))
+        glVertex3fv((max_pos, 0, line))
+        glVertex3fv((min_pos,0,line))
 
         # #############################################
         # roof lines
         # vertical lines
-        glVertex3fv((line,world_size,world_size/2))
-        glVertex3fv((line,world_size,-world_size/2))
+        glVertex3fv((line,abs(max_pos*2),max_pos))
+        glVertex3fv((line,abs(max_pos*2),min_pos))
         # horizontal lines
-        glVertex3fv((world_size/2,world_size, line))
-        glVertex3fv((-world_size/2,world_size,line))
+        glVertex3fv((max_pos,abs(max_pos*2), line))
+        glVertex3fv((min_pos,abs(max_pos*2),line))
 
         # #############################################
         # front wall lines
         # vertical lines
-        glVertex3fv((line,world_size,-world_size/2))
-        glVertex3fv((line,0,-world_size/2))
+        glVertex3fv((line,abs(max_pos*2),min_pos))
+        glVertex3fv((line,0,min_pos))
         # horizontal lines
-        glVertex3fv((world_size/2,line+world_size/2, -world_size/2))
-        glVertex3fv((-world_size/2,line+world_size/2,-world_size/2))
+        glVertex3fv((max_pos,line+max_pos, min_pos))
+        glVertex3fv((min_pos,line+max_pos,min_pos))
 
         # #############################################
         # back wall lines
         # vertical lines
-        glVertex3fv((line,world_size,world_size/2))
-        glVertex3fv((line,0,world_size/2))
+        glVertex3fv((line,abs(max_pos*2),max_pos))
+        glVertex3fv((line,0,max_pos))
         # horizontal lines
-        glVertex3fv((world_size/2,line+world_size/2, world_size/2))
-        glVertex3fv((-world_size/2,line+world_size/2,world_size/2))
+        glVertex3fv((max_pos,line+max_pos, max_pos))
+        glVertex3fv((min_pos,line+max_pos,max_pos))
         
         # #############################################
         # right wall lines
         # vertical lines
-        glVertex3fv((-world_size/2,world_size,line))
-        glVertex3fv((-world_size/2,0,line))
+        glVertex3fv((min_pos,abs(max_pos*2),line))
+        glVertex3fv((min_pos,0,line))
         # horizontal lines
-        glVertex3fv((-world_size/2,line+world_size/2, -world_size/2))
-        glVertex3fv((-world_size/2,line+world_size/2, world_size/2))
+        glVertex3fv((min_pos,line+max_pos, min_pos))
+        glVertex3fv((min_pos,line+max_pos, max_pos))
     
         # #############################################
         # left wall lines
         # vertical lines
-        glVertex3fv((world_size/2,world_size,line))
-        glVertex3fv((world_size/2,0,line))
+        glVertex3fv((max_pos,abs(max_pos*2),line))
+        glVertex3fv((max_pos, 0, line))
         # horizontal lines
-        glVertex3fv((world_size/2,line+world_size/2, -world_size/2))
-        glVertex3fv((world_size/2,line+world_size/2, world_size/2))
+        glVertex3fv((max_pos,line+max_pos, min_pos))
+        glVertex3fv((max_pos,line+max_pos, max_pos))
 
     glEnd()
 
@@ -256,10 +273,8 @@ def proces_inputs(camera_list: List[Camera]):
                 is_mouse_down = False
         
     (mouse_pos_x, mouse_pos_y) = proces_mouse_movement(mouse_pos_x, mouse_pos_y, is_mouse_down, camera_list[current_camera_index])
-
-def create_virtual_cameras_from_real_cameras(calibration_image_folder: str = default_calibartion_images_folder,
-                                             force_recompute: bool = False):
-    
+   
+def load_real_cameras(calibration_image_folder: str = default_calibartion_images_folder,force_recompute: bool = False):
     if force_recompute:
         cam_intrisic_parameters, extrinsic_parameters_list = get_calibration_matrix_and_external_params(calibration_image_folder)
     else:
@@ -268,14 +283,19 @@ def create_virtual_cameras_from_real_cameras(calibration_image_folder: str = def
                 cam_intrisic_parameters = pickle.load(handle)
             with open('camera_data/external_parameters_list.pkl', 'rb') as handle:
                 extrinsic_parameters_list = pickle.load(handle)
-
         except:
+            print('Error loading camera parameters')
             cam_intrisic_parameters, extrinsic_parameters_list = get_calibration_matrix_and_external_params(calibration_image_folder)
+    
+    return cam_intrisic_parameters, extrinsic_parameters_list
+
+def create_virtual_cameras_from_real_cameras(cam_intrisic_parameters, extrinsic_parameters_list):
             
     camera_list: List[Camera] = []
 
     cam_width = 640
     cam_height = 480
+    '''
     for extrinsic_parameters in extrinsic_parameters_list:
         focal_length = np.array([cam_intrisic_parameters[0,0],cam_intrisic_parameters[1,1]])
         cam_rotation, cam_translation, cam_projection = extrinsic_parameters
@@ -293,6 +313,26 @@ def create_virtual_cameras_from_real_cameras(calibration_image_folder: str = def
                         )
         camera_list.append(camera)
         print(f'camera translation: {cam_translation}')
+    '''
+    cube_shilouette = cv2.imread('/home/carles/repos/3d-environment/visuall_hull_extractor/calibration_images/square_mask.png', cv2.IMREAD_GRAYSCALE)
+    camera = Camera(position=[0.,5.,20.],
+                        target = [.0,5.,.0],
+                        display_height=cam_height, 
+                        display_width=cam_width,
+                        speed=0.,
+                        rot_step = 0.,
+                        shilouette=cube_shilouette,
+                        )
+    camera_list.append(camera)
+    camera = Camera(position=[20.,5.,0.],
+                        target = [.0,5.,.0],
+                        display_height=cam_height, 
+                        display_width=cam_width,
+                        speed=0.,
+                        rot_step = 0.,
+                        shilouette=cube_shilouette,
+                        )
+    camera_list.append(camera)
 
     return camera_list
 
@@ -301,80 +341,152 @@ def render_virtual_cameras(camera_list: List[Camera]):
         if camera.has_to_render:
             camera.render_camera()
 
+class Frame:
+    def __init__(self):
+        self.display_size = (640,480)
 
-def main():
-    pygame.init()
-    display = (1200,600)
-    
-    global background_show
-    global mouse_pos_x
-    global mouse_pos_y
-    global is_mouse_down
-    background_show = True
-    ttt = time.time()
-    show_time = True
-    is_mouse_down = False
+    def init_window(self):
+        glutInit()
+        glutInitDisplayMode(GLUT_RGBA) 
+        glutInitWindowSize(640, 480)
+        glutInitWindowPosition(100, 100)
+        wind = glutCreateWindow('Visual Hull')
+        glutDisplayFunc(self.gl_loop_callback)
+        glutIdleFunc(self.gl_loop_callback)
+        self.vhull_vertex = model_voxel_space.get_voxel_centers_as_np_array()
+        self.vhull_vertex = np.array([-0.5,-0.5,0.0,0.5,0.5,-0.5],dtype=np.float32)
+        self.vhull_shader = VHullShader(vhull_vertex = self.vhull_vertex)
 
-    global current_camera_index
-    camera_list = create_virtual_cameras_from_real_cameras(force_recompute=True)
-    camera_list.append(Camera(position=[0.0,0.5,10.0], target=[0.0,0.0,0.0], has_to_render_image_plane=False))
-    
-    current_camera_index = len(camera_list) - 1
+        self.background_show = True
+        '''
+        self.mouse_pos_x
+        self.mouse_pos_y
+        self.is_mouse_down
+        '''
+        self.ttt = time.time()
+        self.show_time = True
+        self.is_mouse_down = False
+
+        self.cam_intrinsc_params, self.cam_extrinsic_prmtrs_lst = load_real_cameras(force_recompute = True)
+        self.camera_list = create_virtual_cameras_from_real_cameras(self.cam_intrinsc_params, self.cam_extrinsic_prmtrs_lst)
+        self.camera_list.append(Camera(position=[0.0,world_size,0.1], target=[0.0,0.0,0.0], has_to_render_image_plane=False))
+        
+        self.current_camera_index = len(self.camera_list) - 1
 
 
 
-    print_pos = False
-    print_modelview = False
-    #store initial mouse position
-    (mouse_pos_x,mouse_pos_y) = pygame.mouse.get_pos()
+        self.print_pos = False
+        self.print_modelview = False
+        #store initial mouse position
+        # (mouse_pos_x,mouse_pos_y) = pygame.mouse.get_pos()
 
-    pygame.display.set_mode(display, DOUBLEBUF|OPENGL)
-
-
-    glMatrixMode(GL_PROJECTION)
-    gluPerspective(camera_list[current_camera_index].fov[1], (display[0]/display[1]), 0.1, 500.0)
-    while True:
-        pygame.time.delay(10)
-
-        proces_inputs(camera_list)
-        check_boundaries(camera_list[current_camera_index])
-        glMatrixMode(GL_MODELVIEW)
-        glLoadIdentity()
-        camera_list[current_camera_index].cam_lookat()
+        glutMainLoop()
         glMatrixMode(GL_PROJECTION)
-        glLoadIdentity()
-        gluPerspective(50, (display[0]/display[1]), 0.1, 100.0)
-        if print_modelview:
+        gluPerspective(self.camera_list[self.current_camera_index].fov[1], (self.display_size[0]/self.display_size[1]), 0.1, 500.0)
+    
+    def _draw_frame(self):    
+
+        if self.print_modelview:
             a = (GLfloat * 16)()
             mvm = glGetFloatv(GL_MODELVIEW_MATRIX, a)
             print('GL look at matrix: ')
             print(np.asarray(list(a)).reshape((4,4)))
             print('--------------')
             print('Computed look at matrix: ')
-            print(camera_list[current_camera_index].get_view_matrix())
-            print('Camera position: ' + str(camera_list[current_camera_index].position))
+            print(self.camera_list[self.current_camera_index].get_view_matrix())
+            print('Camera position: ' + str(self.camera_list[self.current_camera_index].position))
             print('----------------------------')
-        if print_pos:
-            print(str(camera_list[current_camera_index].position) + ' ||||x ' + str(camera_list[current_camera_index].x_axis) + ' ||||y ' +str(camera_list[current_camera_index].y_axis) + ' ||||z ' + str(camera_list[current_camera_index].z_axis))
-        
-        glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
-        
-        camera_list[0].project_3d_point_into_image_plane_opencv(Vector3([0.,0.,0.]))
+        if self.print_pos:
+            print(str(self.camera_list[self.current_camera_index].position) + ' ||||x ' + str(self.camera_list[self.current_camera_index].x_axis) + ' ||||y ' +str(self.camera_list[self.current_camera_index].y_axis) + ' ||||z ' + str(self.camera_list[self.current_camera_index].z_axis))
 
-        render_virtual_cameras(camera_list)
-        plot_axes()
+
+    def gl_loop_callback(self):    
+        '''
+        Function executed every time OpenGL needs to redraw the window.
+        Binded with:
+            glutDisplayFunc(self.gl_loop_callback)
+            glutIdleFunc(self.gl_loop_callback)
+        methods in the self.init_window() process.
+        glutDisplayFunc() sets the callback for everytime the window is resized or opened or smthing like this
+        glutIdleFunc() sets the callback to run in loop even when no events must be processed.
+                       from OpenGL documentation: 
+                            sets the global idle callback to be func so a GLUT program can perform background processing
+                            tasks or continuous animation when window system events are not being received. If enabled,
+                            the idle callback is continuously called when events are not being received
+        '''
+        
+        # proces_inputs(self.camera_list)
+        # check_boundaries(self.camera_list[self.current_camera_index])
+
+        self.update_gl_matrices()
+
+        if self.print_modelview:
+            self.print_gl_and_computed_view_matrices()
+        if self.print_pos:
+            self.print_camera_position()
+
+        self.render_scene()
+        
+        if self.show_time:
+            self.compute_fps()
+
+    def render_scene(self):
+        # clear screen
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+        
+        # render each element
+        self.vhull_shader.short_render(viewing_camera = self.camera_list[-1], modeling_cameras = self.camera_list[0:-1])
+        render_virtual_cameras(self.camera_list)
+        square()
         Cube()
-        if background_show:
-            ground()
-        pygame.display.flip()
+        plot_axes()
+        if self.background_show:
+            ground(ground_points)
+            ground(figure_space_points)
+        # swap buffers i dont actualy know what this does
+        glutSwapBuffers()
 
-        if show_time:
-            d_t = time.time() - ttt
-            frame_rate = 1/(d_t)
-            # print(f'Frame rate: {frame_rate} fps')
-            ttt = time.time()
+    def update_gl_matrices(self):
+        # set projection matrix
+        glMatrixMode(GL_PROJECTION)
+        glLoadIdentity()
+        gluPerspective(50, self.camera_list[self.current_camera_index].aspect_ratio, 0.1, 100.0)
+        
+        # set modelview matrix (actualy just view matrix  model view is an identity matrix)
+        glMatrixMode(GL_MODELVIEW)
+        glLoadIdentity()
+        self.camera_list[self.current_camera_index].cam_lookat()
 
-        ##pygame.time.wait(10)
+    def compute_fps(self):
+        d_t = time.time() - self.ttt
+        frame_rate = 1/(d_t)
+        print(f'Frame rate: {frame_rate} fps')
+        self.ttt = time.time()
+
+    def get_gl_view_matrix(self):
+        a = (GLfloat * 16)()
+        mvm = glGetFloatv(GL_MODELVIEW_MATRIX, a)
+        print('GL look at matrix: ')
+        gl_view_matrix = np.asarray(list(a)).reshape((4,4))
+        return gl_view_matrix
+
+    def print_gl_and_computed_view_matrices(self):
+        gl_view_matrix = self.get_gl_view_matrix()
+        print('GL look at matrix: ')
+        print(gl_view_matrix)
+        print('--------------')
+        print('Computed look at matrix: ')
+        print(self.camera_list[self.current_camera_index].get_view_matrix())
+    
+    def print_camera_position(self):
+        print('Camera position: ' + str(self.camera_list[self.current_camera_index].position))
+        print('----------------------------')
+
+def main():
+    frame = Frame()
+    frame.init_window()
+
 
 if __name__ == "__main__":
     main()
+    

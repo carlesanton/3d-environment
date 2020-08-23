@@ -3,6 +3,8 @@ from math import sin, cos, radians
 import numpy as np
 import cv2
 
+from typing import Tuple
+
 from OpenGL.GLU import *
 from OpenGL.GL import *
 from OpenGL.GLU import *
@@ -29,12 +31,17 @@ class Camera:
         has_to_render_image_plane: bool = True,
         has_to_render_axes: bool = True,
         speed: float = 0.15,
-        rot_step: float = 0.025
+        rot_step: float = 0.025,
+        shilouette = None
     ):
 
         self.position = Vector3(position)
         self.target = Vector3(target)
 
+        # shilouette for space carving
+        self.shilouette = shilouette
+        if shilouette is None:
+            self.shilouette = np.zeros((display_width, display_height))
 
         # PARAMETTERS FOR PERSPECTIVE PROJECTION
         self.display_width = display_width
@@ -74,6 +81,7 @@ class Camera:
         self.fov = np.array([0.,0.])
         self.fov[0] = 2. * np.arctan(self.display_width/(2.*self.focal_length[0]))
         self.fov[1] = 2. * np.arctan(self.display_height/(2.*self.focal_length[1]))
+        self.fov = [50.,50.*self.aspect_ratio]
 
     def get_view_matrix(self):
         return self.look_at_matrix(self.position, self.target, self.y_axis)
@@ -146,24 +154,24 @@ class Camera:
         return result
 
     def set_projection_matrix(self):
-        self.projection_matrix =  matrix44.create_perspective_projection(self.fov, (self.display_width/self.display_width), 0.1, 500.0) 
+        self.projection_matrix =  matrix44.create_perspective_projection(self.fov[0], self.aspect_ratio, 0.1, 500.0) 
 
     def get_projection_matrix(self):
-        
         return self.projection_matrix
 
-    def project_3d_point_into_image_plane(self, world_point: Vector3):
+    def project_3d_point_into_image_plane(self, world_point: Vector3) -> Tuple[float]:
 
         point_in_camera_coordinates = self.get_view_matrix() * Vector4([world_point.x, world_point.y, world_point.z, 1])
 
         f = self.focal_length
         im_center = self.principal_point
-        point_in_image_plane = [float((f[0]*point_in_camera_coordinates.x/ point_in_camera_coordinates.z) + im_center[0]),
-                                float((f[1]*point_in_camera_coordinates.y/ point_in_camera_coordinates.z) + im_center[1])]
+        point_in_image_plane = (float((f[0]*point_in_camera_coordinates.x/ point_in_camera_coordinates.z) + im_center[0]),
+                                float((f[1]*point_in_camera_coordinates.y/ point_in_camera_coordinates.z) + im_center[1]),
+                                )
 
         return point_in_image_plane
 
-    def project_3d_point_into_image_plane_opencv(self, world_points):
+    def project_3d_point_into_image_plane_opencv(self, world_points) -> Tuple[float]:
         image_points, _ = cv2.projectPoints(
             objectPoints = world_points.T.reshape(-1,1,3), 
             rvec = cv2.Rodrigues(self.camera_rotation)[0], 
@@ -174,7 +182,11 @@ class Camera:
 
         return image_points
 
-
+    def check_point_in_silhouette(self, image_point: Tuple[float]) -> bool:
+        if self.shilouette[int(image_point[1])-1,int(image_point[0])-1]:
+            return True
+        else:
+            return False
 
     def render_image_plane(self):
         glBegin(GL_QUADS)
