@@ -12,14 +12,20 @@ from OpenGL.GLU import *
 from OpenGL.GLUT import *
 from visuall_hull_extractor.cam_params_position import get_calibration_matrix_and_external_params
 from visuall_hull_extractor.utils.visual_vull import VoxelGrid
-from visuall_hull_extractor.utils.visual_vull import VHullShader
+from visuall_hull_extractor.utils.visual_vull import VHull
+from visuall_hull_extractor.utils.Object import Object
+from visuall_hull_extractor.utils.Object import ImagePlane
+from visuall_hull_extractor.utils.Object import Scene
+from Shaders import Shader
+from Shaders import TextureShader
 import cv2
+from PIL import Image
 
 
 
 default_calibartion_images_folder = os.path.join(os.getcwd(), 'visuall_hull_extractor', 'calibration_images')
 
-verticies = (
+vertices = (
     (1, -1, -1),
     (1, 1, -1),
     (-1, 1, -1),
@@ -49,231 +55,147 @@ world_size = 50.0
 world_line_spacing = 4.0
 
 figure_render_size = 10.0
-figure_voxel_size = 2
+figure_voxel_size = 0.5
 
-current_camera_index = -1
+current_camera_index = 0
 
 
 ground_points = np.linspace(start = int(-world_size/2.0), stop=int(world_size/2.0), num=int(world_size/world_line_spacing), endpoint=True)
-figure_space_points = np.linspace(start = int(-figure_render_size/2.0), stop=int(figure_render_size/2.0), num=int(figure_render_size/figure_voxel_size), endpoint=False)
+figure_space_points = np.linspace(start = int(-figure_render_size/2.0), stop=int(figure_render_size/2.0), num=int(figure_render_size/figure_voxel_size)+1, endpoint=True)
 
 model_voxel_space = VoxelGrid(figure_space_points)
 
-
-def check_boundaries(cam: Camera):
-   
-    if cam.speed > 0:
-        # X boundaries
-        if cam.position.x<-world_size/2:
-            cam.position.x = -world_size/2
-        if cam.position.x>world_size/2:
-            cam.position.x = world_size/2
-
-        # Y boundaries
-        if cam.position.y<0.5:
-            cam.position.y = 0.5
-        if cam.position.y>world_size:
-            cam.position.y = world_size
-
-        # Z boundaries
-        if cam.position.z<-world_size/2:
-            cam.position.z = -world_size/2
-        if cam.position.z>world_size/2:
-            cam.position.z = world_size/2
-
-
-        cam.target = cam.position - cam.z_axis
-        cam.update_camera_vectors()
-
-def square():
-    # glColor3f(1.0, 0.0, 3.0)
-    glBegin(GL_QUADS)
-    glVertex2f(100, 100)
-    glVertex2f(200, 100)
-    glVertex2f(200, 200)
-    glVertex2f(100, 200)
-    glEnd()
-
-def Cube():
-    glBegin(GL_LINES)
-    glColor3f(1.0,1.0,1.0)
+def create_cube_object(verticies, edges, color):
+    vertices_list = []
+    colors_list = []
     for edge in edges:
         for vertex in edge:
-            glVertex3fv(verticies[vertex])
-    glEnd()
+            vertices_list.append(verticies[vertex])
+            colors_list.append(color)
 
-def ground(ground_points):
-    glBegin(GL_LINES)
-    glColor3f(1.0,1.0,1.0)
-    
+    return Object(vertices=np.array(vertices_list,dtype=np.float32), colors=np.array(colors_list,dtype=np.float32))
+
+def create_ground_object(ground_points, color):
+    vertices_list = []
+    colors_list = []
+        
     max_pos = max(ground_points)
     min_pos = min(ground_points)
     # #############################################
     # ground lines
     for line in ground_points:
-        
         # vertical lines
-        glVertex3fv((line,0,max_pos))
-        glVertex3fv((line,0,min_pos))
+        vertices_list.append((line,0.,max_pos))
+        colors_list.append(color)
+        
+        vertices_list.append((line,0.,min_pos))
+        colors_list.append(color)
         # horizontal lines
-        glVertex3fv((max_pos, 0, line))
-        glVertex3fv((min_pos,0,line))
+        vertices_list.append((max_pos, 0., line))
+        colors_list.append(color)
+        
+        vertices_list.append((min_pos,0.,line))
+        colors_list.append(color)
 
         # #############################################
         # roof lines
         # vertical lines
-        glVertex3fv((line,abs(max_pos*2),max_pos))
-        glVertex3fv((line,abs(max_pos*2),min_pos))
+        vertices_list.append((line,abs(max_pos*2),max_pos))
+        colors_list.append(color)
+        
+        vertices_list.append((line,abs(max_pos*2),min_pos))
+        colors_list.append(color)
         # horizontal lines
-        glVertex3fv((max_pos,abs(max_pos*2), line))
-        glVertex3fv((min_pos,abs(max_pos*2),line))
+        vertices_list.append((max_pos,abs(max_pos*2), line))
+        colors_list.append(color)
+        
+        vertices_list.append((min_pos,abs(max_pos*2),line))
+        colors_list.append(color)
 
         # #############################################
         # front wall lines
         # vertical lines
-        glVertex3fv((line,abs(max_pos*2),min_pos))
-        glVertex3fv((line,0,min_pos))
+        vertices_list.append((line,abs(max_pos*2),min_pos))
+        colors_list.append(color)
+        
+        vertices_list.append((line,0.,min_pos))
+        colors_list.append(color)
         # horizontal lines
-        glVertex3fv((max_pos,line+max_pos, min_pos))
-        glVertex3fv((min_pos,line+max_pos,min_pos))
+        vertices_list.append((max_pos,line+max_pos, min_pos))
+        colors_list.append(color)
+        
+        vertices_list.append((min_pos,line+max_pos,min_pos))
+        colors_list.append(color)
 
         # #############################################
         # back wall lines
         # vertical lines
-        glVertex3fv((line,abs(max_pos*2),max_pos))
-        glVertex3fv((line,0,max_pos))
-        # horizontal lines
-        glVertex3fv((max_pos,line+max_pos, max_pos))
-        glVertex3fv((min_pos,line+max_pos,max_pos))
+        vertices_list.append((line,abs(max_pos*2),max_pos))
+        colors_list.append(color)
         
+        vertices_list.append((line,0.,max_pos))
+        colors_list.append(color)
+        # horizontal lines
+        vertices_list.append((max_pos,line+max_pos, max_pos))
+        colors_list.append(color)
+        
+        vertices_list.append((min_pos,line+max_pos,max_pos))
+        colors_list.append(color)
+
         # #############################################
         # right wall lines
         # vertical lines
-        glVertex3fv((min_pos,abs(max_pos*2),line))
-        glVertex3fv((min_pos,0,line))
+        vertices_list.append((min_pos,abs(max_pos*2),line))
+        colors_list.append(color)
+        
+        vertices_list.append((min_pos,0.,line))
+        colors_list.append(color)
         # horizontal lines
-        glVertex3fv((min_pos,line+max_pos, min_pos))
-        glVertex3fv((min_pos,line+max_pos, max_pos))
-    
+        vertices_list.append((min_pos,line+max_pos, min_pos))
+        colors_list.append(color)
+        
+        vertices_list.append((min_pos,line+max_pos, max_pos))
+        colors_list.append(color)
+
         # #############################################
         # left wall lines
         # vertical lines
-        glVertex3fv((max_pos,abs(max_pos*2),line))
-        glVertex3fv((max_pos, 0, line))
-        # horizontal lines
-        glVertex3fv((max_pos,line+max_pos, min_pos))
-        glVertex3fv((max_pos,line+max_pos, max_pos))
-
-    glEnd()
-
-def plot_axes():
-    glBegin(GL_LINES)
-    # red X axis
-    glColor3f(1.0,0.0,0.0)
-    glVertex3fv([0.0,0.0,0.0])
-    glVertex3fv([1.0,0.0,0.0])
-    # green Y axis
-    glColor3f(0.0,1.0,0.0)
-    glVertex3fv([0.0,0.0,0.0])
-    glVertex3fv([0.0,1.0,0.0])
-    # blue Z axis
-    glColor3f(0.0,0.0,1.0)
-    glVertex3fv([0.0,0.0,0.0])
-    glVertex3fv([0.0,0.0,1.0])
-
-    glEnd()
-
-def proces_mouse_movement(prev_pos_x,prev_pos_y,is_mouse_down, cam: Camera):
-    #get mouse position and delta (do after pump events)
-    (pos_x,pos_y) = pygame.mouse.get_pos()
-    #compute delta of previous and actual position
-    mouse_delta_x = (prev_pos_x-pos_x)
-    mouse_delta_y = (prev_pos_y-pos_y)
-    #print(str(mouse_delta_x) + ' ' + str(mouse_delta_y))
-    #store new position
-
-
-
-    # si el boto esquerra està clicat
-
-    if is_mouse_down:
-        # rotate the pertinent amount in each axis
-        cam.rotate(-mouse_delta_x*cam.rot_step, Vector3([.0,1.0,.0]))
-        cam.rotate(-mouse_delta_y*cam.rot_step, Vector3([1.0,.0,.0]))
-
-    return pos_x, pos_y
-
-def proces_inputs(camera_list: List[Camera]):
-    
-    global current_camera_index
-    global background_show
-    global mouse_pos_x
-    global mouse_pos_y
-    global is_mouse_down
-
-
-    keys = pygame.key.get_pressed()
-    # ARROWS
-    if keys[pygame.K_LEFT]:
-        direction_vector = Vector3([-1.,.0,.0])
-        camera_list[current_camera_index].move(direction_vector*camera_list[current_camera_index].speed)        
-    if keys[pygame.K_RIGHT]:
-        direction_vector = Vector3([1.,.0,.0])
-        camera_list[current_camera_index].move(direction_vector*camera_list[current_camera_index].speed)        
-    if keys[pygame.K_UP]:
-        direction_vector = Vector3([.0,.0,-1.])
-        camera_list[current_camera_index].move(direction_vector*camera_list[current_camera_index].speed)        
-    if keys[pygame.K_DOWN]:
-        direction_vector = Vector3([.0,.0,1.])
-        camera_list[current_camera_index].move(direction_vector*camera_list[current_camera_index].speed)        
-
-    # ASDW
-    if keys[pygame.K_a]:
-        camera_list[current_camera_index].rotate(-camera_list[current_camera_index].rot_step,Vector3([0.0,1.,.0]))
-    if keys[pygame.K_s]:
-        camera_list[current_camera_index].rotate(camera_list[current_camera_index].rot_step,Vector3([1.0,0.0,.0]))
-    if keys[pygame.K_d]:
-        camera_list[current_camera_index].rotate(camera_list[current_camera_index].rot_step,Vector3([0.0,1.0,.0]))
-    if keys[pygame.K_w]:
-        camera_list[current_camera_index].rotate(-camera_list[current_camera_index].rot_step,Vector3([1.0,0.0,.0]))
-
-    # TOGGLE KEYS
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            pygame.quit()
-            quit()
-        # KEY DOWN
-        if event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_SPACE:
-                background_show = not  background_show
-            
-            if event.key == pygame.K_LSHIFT or event.key == pygame.K_RSHIFT:
-                camera_list[current_camera_index].speed = camera_list[current_camera_index].speed*4
-
-            if event.key == pygame.K_PLUS:
-                current_camera_index += 1
-                if current_camera_index >= len(camera_list):
-                    current_camera_index = 0
-
-            if event.key == pygame.K_MINUS:
-                current_camera_index -= 1
-                if current_camera_index < 0:
-                    current_camera_index = len(camera_list) - 1
-            
-
-        # MOUSE DOWN
-        if event.type == pygame.MOUSEBUTTONDOWN:
-            if event.button == 1:
-                is_mouse_down = True
-
-
-        # MOUSE UP
-        if event.type == pygame.MOUSEBUTTONUP:
-            if event.button == 1:
-                is_mouse_down = False
+        vertices_list.append((max_pos,abs(max_pos*2),line))
+        colors_list.append(color)
         
-    (mouse_pos_x, mouse_pos_y) = proces_mouse_movement(mouse_pos_x, mouse_pos_y, is_mouse_down, camera_list[current_camera_index])
-   
+        vertices_list.append((max_pos, 0., line))
+        colors_list.append(color)
+        # horizontal lines
+        vertices_list.append((max_pos,line+max_pos, min_pos))
+        colors_list.append(color)
+        
+        vertices_list.append((max_pos,line+max_pos, max_pos))
+        colors_list.append(color)
+
+    return Object(vertices=np.array(vertices_list,dtype=np.float32), colors=np.array(colors_list,dtype=np.float32))
+    
+def create_axis_object(center: Vector3):
+    vertices_list = []
+    colors_list = []
+    
+    # red X axis
+    vertices_list.append([0.0 + center.x,0.0 + center.y,0.0 + center.z])
+    colors_list.append([1.,0.,0.])
+    vertices_list.append([1.0 + center.x,0.0 + center.y,0.0 + center.z])
+    colors_list.append([1.,0.,0.])
+    # green Y axis
+    vertices_list.append([0.0 + center.x,0.0 + center.y,0.0 + center.z])
+    colors_list.append([0.,1.,0.])
+    vertices_list.append([0.0 + center.x,1.0 + center.y,0.0 + center.z])
+    colors_list.append([0.,1.,0.])
+    # blue Z axis
+    vertices_list.append([0.0 + center.x,0.0 + center.y,0.0 + center.z])
+    colors_list.append([0.,0.,1.])
+    vertices_list.append([0.0 + center.x,0.0 + center.y,1.0 + center.z])
+    colors_list.append([0.,0.,1.])
+
+    return Object(vertices=np.array(vertices_list,dtype=np.float32), colors=np.array(colors_list,dtype=np.float32))
+    
 def load_real_cameras(calibration_image_folder: str = default_calibartion_images_folder,force_recompute: bool = False):
     if force_recompute:
         cam_intrisic_parameters, extrinsic_parameters_list = get_calibration_matrix_and_external_params(calibration_image_folder)
@@ -289,7 +211,7 @@ def load_real_cameras(calibration_image_folder: str = default_calibartion_images
     
     return cam_intrisic_parameters, extrinsic_parameters_list
 
-def create_virtual_cameras_from_real_cameras(cam_intrisic_parameters, extrinsic_parameters_list):
+def create_virtual_cameras_from_real_cameras(cam_intrisic_parameters, extrinsic_parameters_list, shader = None):
             
     camera_list: List[Camera] = []
 
@@ -315,6 +237,8 @@ def create_virtual_cameras_from_real_cameras(cam_intrisic_parameters, extrinsic_
         print(f'camera translation: {cam_translation}')
     '''
     cube_shilouette = cv2.imread('/home/carles/repos/3d-environment/visuall_hull_extractor/calibration_images/square_mask.png', cv2.IMREAD_GRAYSCALE)
+    cube_shilouette = cv2.imread('/home/carles/repos/3d-environment/visuall_hull_extractor/calibration_images/calibration_image_4.jpg', cv2.IMREAD_GRAYSCALE)
+    
     camera = Camera(position=[0.,5.,20.],
                         target = [.0,5.,.0],
                         display_height=cam_height, 
@@ -322,6 +246,7 @@ def create_virtual_cameras_from_real_cameras(cam_intrisic_parameters, extrinsic_
                         speed=0.,
                         rot_step = 0.,
                         shilouette=cube_shilouette,
+                        shader = shader,
                         )
     camera_list.append(camera)
     camera = Camera(position=[20.,5.,0.],
@@ -331,6 +256,7 @@ def create_virtual_cameras_from_real_cameras(cam_intrisic_parameters, extrinsic_
                         speed=0.,
                         rot_step = 0.,
                         shilouette=cube_shilouette,
+                        shader = shader,
                         )
     camera_list.append(camera)
 
@@ -342,63 +268,182 @@ def render_virtual_cameras(camera_list: List[Camera]):
             camera.render_camera()
 
 class Frame:
+        
     def __init__(self):
         self.display_size = (640,480)
 
     def init_window(self):
+        
+        self.web_cam = cv2.VideoCapture(0)
+        
         glutInit()
         glutInitDisplayMode(GLUT_RGBA) 
         glutInitWindowSize(640, 480)
         glutInitWindowPosition(100, 100)
         wind = glutCreateWindow('Visual Hull')
+        # set OpenGL callbacks
+        # set display callbacks
         glutDisplayFunc(self.gl_loop_callback)
         glutIdleFunc(self.gl_loop_callback)
-        self.vhull_vertex = model_voxel_space.get_voxel_centers_as_np_array()
-        self.vhull_vertex = np.array([-0.5,-0.5,0.0,0.5,0.5,-0.5],dtype=np.float32)
-        self.vhull_shader = VHullShader(vhull_vertex = self.vhull_vertex)
-
-        self.background_show = True
+        # set keyboard callbacks
+        glutKeyboardFunc(self.process_keyboard) # for normal keys
+        glutSpecialFunc(self.process_special_keys) # for special keys (as arrow keys) 
         '''
-        self.mouse_pos_x
-        self.mouse_pos_y
-        self.is_mouse_down
+        # set mouse callbacks
+        glutMotionFunc(self.proces_mouse_movement)
+        glutPassiveMotionFunc(self.proces_mouse_pos)
+        glutMouseFunc(self.proces_mouse_pressing)
         '''
-        self.ttt = time.time()
-        self.show_time = True
-        self.is_mouse_down = False
+        # create vhull shader program
+        vhull_vertex_shader = open('./visuall_hull_extractor/shaders/vhull_vertex_shader.glsl','r').read()
+        vhull_fragment_shader = open('./visuall_hull_extractor/shaders/vhull_fragment_shader.glsl','r').read()
+        self.vhull_shader = Shader(vertex_shader_source = vhull_vertex_shader, fragment_shader_source = vhull_fragment_shader)
+        # create regular shader program
+        regular_vertex_shader = open('./visuall_hull_extractor/shaders/regular_vertex_shader.glsl','r').read()
+        regular_fragment_shader = open('./visuall_hull_extractor/shaders/regular_fragment_shader.glsl','r').read()
+        self.regular_shader = Shader(vertex_shader_source = regular_vertex_shader, fragment_shader_source = regular_fragment_shader)
+        
+        # create textured shader program
+        regular_vertex_shader = open('./visuall_hull_extractor/shaders/texture_vertex_shader.glsl','r').read()
+        regular_fragment_shader = open('./visuall_hull_extractor/shaders/texture_fragment_shader.glsl','r').read()
+        self.texture_shader = TextureShader(vertex_shader_source = regular_vertex_shader, fragment_shader_source = regular_fragment_shader)
 
         self.cam_intrinsc_params, self.cam_extrinsic_prmtrs_lst = load_real_cameras(force_recompute = True)
-        self.camera_list = create_virtual_cameras_from_real_cameras(self.cam_intrinsc_params, self.cam_extrinsic_prmtrs_lst)
-        self.camera_list.append(Camera(position=[0.0,world_size,0.1], target=[0.0,0.0,0.0], has_to_render_image_plane=False))
-        
+        self.camera_list = create_virtual_cameras_from_real_cameras(self.cam_intrinsc_params, self.cam_extrinsic_prmtrs_lst, shader = self.regular_shader)
+        self.camera_list.append(Camera(position=[0.0,world_size,-world_size/2], target=[0.0,world_size/2,world_size/2], has_to_render_image_plane=False))
         self.current_camera_index = len(self.camera_list) - 1
 
 
+        self.vhull_vertex = model_voxel_space.get_voxel_centers_as_np_array()
+        # self.vhull_vertex = np.array([-0.5,-0.5,0.0,0.5,0.5,-0.5],dtype=np.float32)
+        np.random.shuffle(self.vhull_vertex)
+        # load vhull shaders code
+        
+        self.scene = Scene()
+        # create VHULL object
+        self.visual_hull = VHull(vhull_vertex = self.vhull_vertex, shader = self.vhull_shader, modeling_cameras = self.camera_list[0:2])
 
+        # Create Cube object
+        self.scene.add_object('cube', create_cube_object(vertices,edges, color=[1.,1.,1.]))
+        self.scene.object_dict['cube'].shader = self.regular_shader
+        self.scene.object_dict['cube'].init_gl_vertex_and_color_buffers()
+        
+        # Create Image object
+        corners = np.array([[world_size/2, world_size, world_size/2],
+                        [-world_size/2, world_size, world_size/2],
+                        [-world_size/2, 0, world_size/2],
+                        [world_size/2, 0, world_size/2]],
+                        dtype=np.float32)
+        self.new_image = Image.open('/home/carles/repos/3d-environment/visuall_hull_extractor/calibration_images/square_mask.png')
+        self.scene.add_object(
+            'image_plane', 
+            ImagePlane(
+                corners,
+                self.visual_hull.cube_shilouette_image,
+                rendering_primitive=GL_QUADS, 
+                shader = self.texture_shader
+            )
+        )
+        
+        # Create Ground object
+        self.scene.add_object('ground', create_ground_object(ground_points, color=[1.,1.,1.]))
+        self.scene.object_dict['ground'].shader = self.regular_shader
+        self.scene.object_dict['ground'].init_gl_vertex_and_color_buffers()
+        
+        # Create Model Box object
+        #self.scene.add_object('model_box', create_ground_object(figure_space_points, color=[1.,0.,1.]))
+        #self.scene.object_dict['model_box'].shader = self.regular_shader
+        #self.scene.object_dict['model_box'].init_gl_vertex_and_color_buffers()
+
+        # Create Axis object
+        self.scene.add_object('center_axis', create_axis_object(center = Vector3([0.,0.,0.])))
+        self.scene.object_dict['center_axis'].shader = self.regular_shader
+        self.scene.object_dict['center_axis'].init_gl_vertex_and_color_buffers()
+
+
+
+        self.mouse_pos_x = 0
+        self.mouse_pos_y = 0
+
+        self.ttt = time.time()
+        self.is_mouse_down = False
+        self.background_show = True
+        self.show_time = True
         self.print_pos = False
         self.print_modelview = False
         #store initial mouse position
         # (mouse_pos_x,mouse_pos_y) = pygame.mouse.get_pos()
 
         glutMainLoop()
-        glMatrixMode(GL_PROJECTION)
-        gluPerspective(self.camera_list[self.current_camera_index].fov[1], (self.display_size[0]/self.display_size[1]), 0.1, 500.0)
-    
-    def _draw_frame(self):    
 
-        if self.print_modelview:
-            a = (GLfloat * 16)()
-            mvm = glGetFloatv(GL_MODELVIEW_MATRIX, a)
-            print('GL look at matrix: ')
-            print(np.asarray(list(a)).reshape((4,4)))
-            print('--------------')
-            print('Computed look at matrix: ')
-            print(self.camera_list[self.current_camera_index].get_view_matrix())
-            print('Camera position: ' + str(self.camera_list[self.current_camera_index].position))
-            print('----------------------------')
-        if self.print_pos:
-            print(str(self.camera_list[self.current_camera_index].position) + ' ||||x ' + str(self.camera_list[self.current_camera_index].x_axis) + ' ||||y ' +str(self.camera_list[self.current_camera_index].y_axis) + ' ||||z ' + str(self.camera_list[self.current_camera_index].z_axis))
+    def proces_mouse_movement(self, current_mouse_pos_x, current_mouse_pos_y):
+        # get mouse delta (do after pump events)
+        mouse_delta_x = (self.mouse_pos_x-current_mouse_pos_x)
+        mouse_delta_y = (self.mouse_pos_y-current_mouse_pos_y)
+        
+        #print(str(mouse_delta_x) + ' ' + str(mouse_delta_y))
+        #store new position
 
+        # si el boto esquerra està clicat
+        if self.is_mouse_down:
+            # rotate the pertinent amount in each axis
+            self.camera_list[self.current_camera_index].rotate(-mouse_delta_x*self.camera_list[self.current_camera_index].rot_step, Vector3([.0,1.0,.0]))
+            self.camera_list[self.current_camera_index].rotate(-mouse_delta_y*self.camera_list[self.current_camera_index].rot_step, Vector3([1.0,.0,.0]))
+
+        self.mouse_pos_x = current_mouse_pos_x
+        self.mouse_pos_y = current_mouse_pos_y
+
+    def proces_mouse_pos(self, current_mouse_pos_x, current_mouse_pos_y):
+        self.mouse_pos_x = current_mouse_pos_x
+        self.mouse_pos_y = current_mouse_pos_y
+
+    def proces_mouse_pressing(self, button, state, mouse_pos_x, mouse_pos_y):
+        if button == GLUT_LEFT_BUTTON and state == GLUT_DOWN:
+            self.is_mouse_down = True
+        elif button == GLUT_LEFT_BUTTON and state == GLUT_UP:
+            self.is_mouse_down = False
+
+    def process_special_keys(self, key, mouse_x, mouse_y):        
+        if key == GLUT_KEY_LEFT:
+            direction_vector = Vector3([-1.,.0,.0])
+            self.camera_list[self.current_camera_index].move(direction_vector*self.camera_list[self.current_camera_index].speed)        
+        elif key == GLUT_KEY_RIGHT:
+            direction_vector = Vector3([1.,.0,.0])
+            self.camera_list[self.current_camera_index].move(direction_vector*self.camera_list[self.current_camera_index].speed)        
+        elif key == GLUT_KEY_UP:
+            direction_vector = Vector3([.0,.0,-1.])
+            self.camera_list[self.current_camera_index].move(direction_vector*self.camera_list[self.current_camera_index].speed)        
+        elif key == GLUT_KEY_DOWN:
+            direction_vector = Vector3([.0,.0,1.])
+            self.camera_list[self.current_camera_index].move(direction_vector*self.camera_list[self.current_camera_index].speed)
+        elif key == 112: ## LEFT SHIFT, I dont find the GLUT_KEY_* for it
+            self.camera_list[self.current_camera_index].speed = self.camera_list[self.current_camera_index].speed*4.
+        elif key == 113: ## RIGHT SHIFT, I dont find the GLUT_KEY_* for it
+            self.camera_list[self.current_camera_index].speed = self.camera_list[self.current_camera_index].speed/4.
+
+    def process_keyboard(self, key, mouse_x, mouse_y):
+        key = key.decode("utf-8").lower()
+        
+        if key == 'a':
+            self.camera_list[self.current_camera_index].rotate(-self.camera_list[self.current_camera_index].rot_step,Vector3([0.0,1.,.0]))
+        elif key == 's':
+            self.camera_list[self.current_camera_index].rotate(self.camera_list[self.current_camera_index].rot_step,Vector3([1.0,0.0,.0]))
+        elif key == 'd':
+            self.camera_list[self.current_camera_index].rotate(self.camera_list[self.current_camera_index].rot_step,Vector3([0.0,1.0,.0]))
+        elif key == 'w':
+            self.camera_list[self.current_camera_index].rotate(-self.camera_list[self.current_camera_index].rot_step,Vector3([1.0,0.0,.0]))
+
+        elif key == '+':
+            self.current_camera_index += 1
+            if self.current_camera_index >= len(self.camera_list):
+                self.current_camera_index = 0
+        elif key == '-':
+            self.current_camera_index -= 1
+            if self.current_camera_index < 0:
+                self.current_camera_index = len(self.camera_list) - 1
+
+        elif key == ' ':
+            self.background_show = not self.background_show
 
     def gl_loop_callback(self):    
         '''
@@ -414,11 +459,14 @@ class Frame:
                             tasks or continuous animation when window system events are not being received. If enabled,
                             the idle callback is continuously called when events are not being received
         '''
-        
-        # proces_inputs(self.camera_list)
-        # check_boundaries(self.camera_list[self.current_camera_index])
 
         self.update_gl_matrices()
+        '''
+        new_image = Image.fromarray(self.web_cam.read()[1])
+        self.scene.object_dict['image_plane'].update_texture_image_2(new_image)
+        '''
+        
+
 
         if self.print_modelview:
             self.print_gl_and_computed_view_matrices()
@@ -426,25 +474,45 @@ class Frame:
             self.print_camera_position()
 
         self.render_scene()
-        
+        self.check_cam_boundaries()
+
         if self.show_time:
             self.compute_fps()
 
     def render_scene(self):
         # clear screen
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
-        
         # render each element
-        self.vhull_shader.short_render(viewing_camera = self.camera_list[-1], modeling_cameras = self.camera_list[0:-1])
+        self.scene.render()
+        self.visual_hull.short_render(viewing_camera = self.camera_list[-1], modeling_cameras = self.camera_list[0:-1])
         render_virtual_cameras(self.camera_list)
-        square()
-        Cube()
-        plot_axes()
-        if self.background_show:
-            ground(ground_points)
-            ground(figure_space_points)
-        # swap buffers i dont actualy know what this does
+        # swap buffers i dont actualy know what this does but it seems necessary for the pipeline
         glutSwapBuffers()
+
+    def check_cam_boundaries(self):
+   
+        if self.camera_list[self.current_camera_index].speed > 0:
+            # X boundaries
+            if self.camera_list[self.current_camera_index].position.x<-world_size/2:
+                self.camera_list[self.current_camera_index].position.x = -world_size/2
+            if self.camera_list[self.current_camera_index].position.x>world_size/2:
+                self.camera_list[self.current_camera_index].position.x = world_size/2
+
+            # Y boundaries
+            if self.camera_list[self.current_camera_index].position.y<0.5:
+                self.camera_list[self.current_camera_index].position.y = 0.5
+            if self.camera_list[self.current_camera_index].position.y>world_size:
+                self.camera_list[self.current_camera_index].position.y = world_size
+
+            # Z boundaries
+            if self.camera_list[self.current_camera_index].position.z<-world_size/2:
+                self.camera_list[self.current_camera_index].position.z = -world_size/2
+            if self.camera_list[self.current_camera_index].position.z>world_size/2:
+                self.camera_list[self.current_camera_index].position.z = world_size/2
+
+
+            self.camera_list[self.current_camera_index].target = self.camera_list[self.current_camera_index].position - self.camera_list[self.current_camera_index].z_axis
+            self.camera_list[self.current_camera_index].update_camera_vectors()
 
     def update_gl_matrices(self):
         # set projection matrix
@@ -466,7 +534,6 @@ class Frame:
     def get_gl_view_matrix(self):
         a = (GLfloat * 16)()
         mvm = glGetFloatv(GL_MODELVIEW_MATRIX, a)
-        print('GL look at matrix: ')
         gl_view_matrix = np.asarray(list(a)).reshape((4,4))
         return gl_view_matrix
 

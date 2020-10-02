@@ -30,9 +30,10 @@ class Camera:
         has_to_render: bool = True,
         has_to_render_image_plane: bool = True,
         has_to_render_axes: bool = True,
-        speed: float = 0.15,
+        speed: float = 0.5,
         rot_step: float = 0.025,
-        shilouette = None
+        shilouette = None,
+        shader = None
     ):
 
         self.position = Vector3(position)
@@ -76,6 +77,11 @@ class Camera:
         self.has_to_render = has_to_render
         self.has_to_render_image_plane = has_to_render_image_plane
         self.has_to_render_axes = has_to_render_axes
+
+        self.shader = shader
+        if self.shader:
+            self.init_gl_vertex_buffers()
+
 
     def compute_fov(self):
         self.fov = np.array([0.,0.])
@@ -188,45 +194,100 @@ class Camera:
         else:
             return False
 
-    def render_image_plane(self):
-        glBegin(GL_QUADS)
+    def init_gl_vertex_buffers(self):
 
+        # create buffers for camera image plane vertices
+        self.init_gl_image_plane_buffers()
+        
+        self.init_gl_frustrum_buffers()
+
+        # create buffers for camera axis
+        self.init_gl_axis_buffers()
+
+    def init_gl_image_plane_buffers(self):
         ofset = Vector3(self.position-self.z_axis*self.focal_length[0])
-        
-        glColor3f(1.0,0.0,0.0)
         up_left_corner = ofset + self.x_axis*self.aspect_ratio + self.y_axis
-        glVertex3fv(up_left_corner)
-        glColor3f(0.0,1.0,0.0)
         up_right_corner = ofset - self.x_axis*self.aspect_ratio + self.y_axis
-        glVertex3fv(up_right_corner)
-        glColor3f(0.0,0.0,1.0)
         down_right_corner = ofset - self.x_axis*self.aspect_ratio - self.y_axis
-        glVertex3fv(down_right_corner)
-        glColor3f(1.0,1.0,1.0)
         down_left_corner = ofset + self.x_axis*self.aspect_ratio - self.y_axis
-        glVertex3fv(down_left_corner)
         
-        glEnd()
+        # create vertices and colors array
+        self.image_plane_vertices = np.array(np.hstack((up_left_corner, up_right_corner, down_right_corner, down_left_corner)),dtype = np.float32) 
+        self.image_plane_colors = np.array(np.hstack(([1.0,0.0,0.0], [0.0,1.0,0.0], [0.0,0.0,1.0], [1.0,1.0,1.0])),dtype = np.float32) 
 
-        # RENDER VISUAL FRUSTUM
-        l1_proj_coordinates = np.cross(up_left_corner, self.position)
-        l2_proj_coordinates = np.cross(up_right_corner, self.position)
-        l3_proj_coordinates = np.cross(down_left_corner, self.position)
-        l4_proj_coordinates = np.cross(down_right_corner, self.position)
-        glBegin(GL_LINES)
+        self.image_plane_primitive = GL_QUADS
+        self.vertex_size = 3
 
+        # Create VAO
+        self.image_plane_vao = self.shader.init_gl_vertex_and_color_buffers_into_vao(self.image_plane_vertices, self.image_plane_colors, self.vertex_size)
+
+    def init_gl_frustrum_buffers(self):
+        ofset = Vector3(self.position-self.z_axis*self.focal_length[0])
+        up_left_corner = ofset + self.x_axis*self.aspect_ratio + self.y_axis
+        up_right_corner = ofset - self.x_axis*self.aspect_ratio + self.y_axis
+        down_right_corner = ofset - self.x_axis*self.aspect_ratio - self.y_axis
+        down_left_corner = ofset + self.x_axis*self.aspect_ratio - self.y_axis
+    
+        # create vertices and colors array
+        self.frustrum_vertices = np.array(np.hstack((
+                            self.position,
+                            up_left_corner,
+                            self.position, 
+                            up_right_corner,
+                            self.position, 
+                            down_left_corner,
+                            self.position, 
+                            down_right_corner, 
+                        )),dtype = np.float32) 
+        self.frustrum_colors = np.array(np.hstack(([0.0,0.0,1.0], [0.0,0.0,1.0], [0.0,0.0,1.0], [0.0,0.0,1.0], [0.0,0.0,1.0], [0.0,0.0,1.0], [0.0,0.0,1.0], [0.0,0.0,1.0])),dtype = np.float32) 
+
+        self.frustrum_primitive = GL_LINES
+        self.vertex_size = 3
+
+        # Create VAO
+        self.frustrum_vao = self.shader.init_gl_vertex_and_color_buffers_into_vao(self.frustrum_vertices, self.frustrum_colors, self.vertex_size)
+    
+    def init_gl_axis_buffers(self):
+        ofset = Vector3(self.position-self.z_axis*self.focal_length[0])
+
+        # create vertices and colors array
+        self.axis_vertices = np.array(np.hstack((
+                            ofset,
+                            ofset + self.x_axis,
+                            [ofset.x,ofset.y,ofset.z],
+                            ofset + self.y_axis,
+                            [ofset.x,ofset.y,ofset.z],
+                            ofset + self.z_axis,
+ 
+                        )),dtype = np.float32) 
+        self.axis_colors = np.array(np.hstack((
+                            [1.0,0.0,0.0], 
+                            [1.0,0.0,0.0], 
+                            [0.0,1.0,0.0], 
+                            [0.0,1.0,0.0], 
+                            [0.0,0.0,1.0], 
+                            [0.0,0.0,1.0], 
+                            )),dtype = np.float32) 
         
+        self.axis_primitive = GL_LINES
+        self.vertex_size = 3
 
-        glColor3f(0.0,0.0,1.0)
-        glVertex3fv(self.position)
-        glVertex3fv(up_left_corner)
-        glVertex3fv(self.position)
-        glVertex3fv(up_right_corner)
-        glVertex3fv(self.position)
-        glVertex3fv(down_left_corner)
-        glVertex3fv(self.position)
-        glVertex3fv(down_right_corner)
-        glEnd()
+        # Create VAO
+        self.axis_vao = self.shader.init_gl_vertex_and_color_buffers_into_vao(self.axis_vertices, self.axis_colors, self.vertex_size)
+
+    def render_image_plane(self):
+
+        self.shader.enable()
+        # render image plane
+        glBindVertexArray(self.image_plane_vao)
+        glDrawArrays(self.image_plane_primitive, 0, int(len(self.image_plane_vertices)/self.vertex_size))
+        glBindVertexArray(0)
+
+        # render frustrum
+        glBindVertexArray(self.frustrum_vao)
+        glDrawArrays(self.frustrum_primitive, 0, int(len(self.frustrum_vertices)/self.vertex_size))
+        glBindVertexArray(0)
+        self.shader.disable()
 
     def render_camera_position(self):
         glBegin(GL_POINTS)
@@ -235,32 +296,32 @@ class Camera:
         glEnd()
 
     def render_axes(self):
-    
-        ofset = Vector3(self.position-self.z_axis*self.focal_length[0])
-        #ofset = Vector3([1.0,1.0,1.0])
-        glBegin(GL_LINES)
-        # red X axis
-        glColor3f(1.0,0.0,0.0)
-        glVertex3fv(ofset)
-        glVertex3fv(ofset + self.x_axis)
-        # green Y axis
-        glColor3f(0.0,1.0,0.0)
-        glVertex3fv([ofset.x,ofset.y,ofset.z])
-        glVertex3fv(ofset + self.y_axis)
-        # blue Z axis
-        glColor3f(0.0,0.0,1.0)
-        glVertex3fv([ofset.x,ofset.y,ofset.z])
-        glVertex3fv(ofset + self.z_axis)
+        if self.shader:
+            self.shader.enable()
+            glBindVertexArray(self.axis_vao)
+            glDrawArrays(self.axis_primitive, 0, int(len(self.axis_vertices)/self.vertex_size))
+            glBindVertexArray(0)
+            self.shader.disable()
 
-        '''
-        #plot camera front begining at 0.0 0.0 0.0
-        glColor3f(1.0,1.0,1.0)
-        glVertex3fv([.0,.0,.0])
-        glVertex3fv(-self.z_axis)
-        '''
-    
+        else:
+            ofset = Vector3(self.position-self.z_axis*self.focal_length[0])
+            glBegin(GL_LINES)
+            # red X axis
+            glColor3f(1.0,0.0,0.0)
+            glVertex3fv(ofset)
+            glVertex3fv(ofset + self.x_axis)
+            # green Y axis
+            glColor3f(0.0,1.0,0.0)
+            glVertex3fv([ofset.x,ofset.y,ofset.z])
+            glVertex3fv(ofset + self.y_axis)
+            # blue Z axis
+            glColor3f(0.0,0.0,1.0)
+            glVertex3fv([ofset.x,ofset.y,ofset.z])
+            glVertex3fv(ofset + self.z_axis)
+            glEnd()
+            
 
-        glEnd()
+
 
     def render_camera(self):
         if self.has_to_render_image_plane:
