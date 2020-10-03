@@ -310,7 +310,7 @@ class Frame:
 
         self.cam_intrinsc_params, self.cam_extrinsic_prmtrs_lst = load_real_cameras(force_recompute = True)
         self.camera_list = create_virtual_cameras_from_real_cameras(self.cam_intrinsc_params, self.cam_extrinsic_prmtrs_lst, shader = self.regular_shader)
-        self.camera_list.append(Camera(position=[0.0,world_size,-world_size/2], target=[0.0,world_size/2,world_size/2], has_to_render_image_plane=False))
+        self.camera_list.append(Camera(position=[0.0,world_size/2,-world_size/2], target=[0.0,world_size/2,world_size/2], has_to_render_image_plane=False))
         self.current_camera_index = len(self.camera_list) - 1
 
 
@@ -329,17 +329,21 @@ class Frame:
         self.scene.object_dict['cube'].init_gl_vertex_and_color_buffers()
         
         # Create Image object
-        corners = np.array([[world_size/2, world_size, world_size/2],
-                        [-world_size/2, world_size, world_size/2],
-                        [-world_size/2, 0, world_size/2],
-                        [world_size/2, 0, world_size/2]],
-                        dtype=np.float32)
+        corners = np.array([
+                    [world_size/2 - 4, world_size - 4, world_size/2],
+                    [-world_size/2 + 4, world_size - 4, world_size/2],
+                    [-world_size/2 + 4, 0 + 4, world_size/2],
+                    [world_size/2 - 4, 0 + 4, world_size/2]
+                    ],
+                    dtype=np.float32,
+                )
         self.new_image = Image.open('/home/carles/repos/3d-environment/visuall_hull_extractor/calibration_images/square_mask.png')
+        texture_image_list = [self.visual_hull.cube_shilouette_image, self.web_cam.read()[1]]
         self.scene.add_object(
             'image_plane', 
             ImagePlane(
                 corners,
-                self.visual_hull.cube_shilouette_image,
+                texture_image_list,
                 rendering_primitive=GL_QUADS, 
                 shader = self.texture_shader
             )
@@ -461,11 +465,10 @@ class Frame:
         '''
 
         self.update_gl_matrices()
-        '''
-        new_image = Image.fromarray(self.web_cam.read()[1])
-        self.scene.object_dict['image_plane'].update_texture_image_2(new_image)
-        '''
         
+        
+        new_image = self.web_cam.read()[1]
+        self.scene.object_dict['image_plane'].update_texture_image(new_image, 1)
 
 
         if self.print_modelview:

@@ -117,7 +117,7 @@ class TextureShader(Shader):
         super().__init__(vertex_shader_source, fragment_shader_source)
         self.texture_unit = texture_unit
 
-    def init_gl_buffers(self, vertices_array, uv_array, texture_image_data, vertex_size, texture_image_shape):
+    def init_gl_buffers(self, vertices_array, uv_array, texture_image_data_list, vertex_size, texture_image_shape):
         self.enable()
         # store attribute locations
         if 'a_vert_location' not in locals():
@@ -153,31 +153,30 @@ class TextureShader(Shader):
         self.texture_image_buffer = glGenTextures(1)
         glActiveTexture(GL_TEXTURE0 + self.texture_unit)
         glBindTexture(GL_TEXTURE_2D_ARRAY, self.texture_image_buffer)
-        glTexStorage3D( 
+        glTexStorage3D(
             GL_TEXTURE_2D_ARRAY,
-            1,
-            GL_RGB8,
-            texture_image_shape[0], 
+            2,
+            GL_RGBA8,
             texture_image_shape[1], 
-            2
+            texture_image_shape[0], 
+            len(texture_image_data_list)
         )
-        glTexSubImage3D( 
-            GL_TEXTURE_2D_ARRAY,
-            0,
-            0,0,0,                 # xoffset, yoffset, zoffset
-            texture_image_shape[0],# width
-            texture_image_shape[1],# height
-            1,                     # depth
-            GL_RGB,                # format
-            GL_UNSIGNED_BYTE,      # type
-            texture_image_data     # data
-        )
+        for image_idx, texture_image in enumerate(texture_image_data_list):
+            glTexSubImage3D( 
+                GL_TEXTURE_2D_ARRAY,
+                0,
+                0,0,image_idx,                  # xoffset, yoffset, zoffset
+                texture_image_shape[1], # width
+                texture_image_shape[0], # height
+                1,          # depth must be 1 for single images
+                GL_RGBA,                # format
+                GL_UNSIGNED_BYTE,       # type
+                texture_image           # data
+            )
         glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_REPEAT)
         glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_REPEAT)
         glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
         glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
-        # glTexImage3D(GL_TEXTURE_2D_ARRAY, 2, GL_RGB, texture_image_shape[0], texture_image_shape[1], 2, 0, GL_RGBA, GL_UNSIGNED_BYTE, texture_image_data)
-        glUniform1i(self.u_texture_location, self.texture_unit)
 
         # unbind buffers
         glBindBuffer(GL_ARRAY_BUFFER, 0)
@@ -185,6 +184,16 @@ class TextureShader(Shader):
         self.disable()
         return vao 
 
-    def update_texture_image(self, new_texture_image):
+    def update_texture_image(self, new_texture_image, image_index, texture_image_shape):
         glBindTexture(GL_TEXTURE_2D_ARRAY, self.texture_image_buffer)
-        glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGB, new_texture_image.shape[0], new_texture_image.shape[1], 3, 0, GL_RGBA, GL_UNSIGNED_BYTE, new_texture_image.tobytes())
+        glTexSubImage3D( 
+            GL_TEXTURE_2D_ARRAY,
+            0,
+            0,0,image_index,        # xoffset, yoffset, zoffset
+            texture_image_shape[1], # width
+            texture_image_shape[0], # height
+            1,                      # depth
+            GL_RGBA,                # format
+            GL_UNSIGNED_BYTE,       # type
+            new_texture_image       # data
+        )
