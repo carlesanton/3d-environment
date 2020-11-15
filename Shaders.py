@@ -134,7 +134,8 @@ class TextureShader(Shader):
             
         # Create VBO for vertices and color
         vertices_array_buffer = glGenBuffers(1)
-        uv_array_buffer = glGenBuffers(1)
+        if isinstance(uv_array,np.ndarray):
+            uv_array_buffer = glGenBuffers(1)
         texture_image_buffer = glGenBuffers(1)
         
         # Fill vertices data
@@ -144,10 +145,11 @@ class TextureShader(Shader):
         glVertexAttribPointer(self.a_vert_location, vertex_size, GL_FLOAT, GL_FALSE, ctypes.sizeof(ctypes.c_float) * vertex_size, None)
             
         # Fill UV data
-        glBindBuffer(GL_ARRAY_BUFFER, uv_array_buffer)
-        glBufferData(GL_ARRAY_BUFFER, uv_array.itemsize * len(uv_array), uv_array, GL_STATIC_DRAW)
-        glEnableVertexAttribArray(self.a_uv_location)
-        glVertexAttribPointer(self.a_uv_location, 2, GL_FLOAT, GL_FALSE, uv_array.itemsize * 2, None)
+        if isinstance(uv_array,np.ndarray):
+            glBindBuffer(GL_ARRAY_BUFFER, uv_array_buffer)
+            glBufferData(GL_ARRAY_BUFFER, uv_array.itemsize * len(uv_array), uv_array, GL_STATIC_DRAW)
+            glEnableVertexAttribArray(self.a_uv_location)
+            glVertexAttribPointer(self.a_uv_location, 2, GL_FLOAT, GL_FALSE, uv_array.itemsize * 2, None)
 
         # Fill texture buffer
         self.texture_image_buffer = glGenTextures(1)

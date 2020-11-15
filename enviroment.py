@@ -12,9 +12,9 @@ from OpenGL.GLU import *
 from OpenGL.GLUT import *
 from visuall_hull_extractor.cam_params_position import get_calibration_matrix_and_external_params
 from visuall_hull_extractor.utils.visual_vull import VoxelGrid
-from visuall_hull_extractor.utils.visual_vull import VHull
+from visuall_hull_extractor.utils.visual_vull import VHullTextured
+from visuall_hull_extractor.utils.image_plane import ImagePlane
 from visuall_hull_extractor.utils.Object import Object
-from visuall_hull_extractor.utils.Object import ImagePlane
 from visuall_hull_extractor.utils.Object import Scene
 from Shaders import Shader
 from Shaders import TextureShader
@@ -55,7 +55,7 @@ world_size = 50.0
 world_line_spacing = 4.0
 
 figure_render_size = 10.0
-figure_voxel_size = 0.5
+figure_voxel_size = .1
 
 current_camera_index = 0
 
@@ -236,8 +236,8 @@ def create_virtual_cameras_from_real_cameras(cam_intrisic_parameters, extrinsic_
         camera_list.append(camera)
         print(f'camera translation: {cam_translation}')
     '''
-    cube_shilouette = cv2.imread('/home/carles/repos/3d-environment/visuall_hull_extractor/calibration_images/square_mask.png', cv2.IMREAD_GRAYSCALE)
     cube_shilouette = cv2.imread('/home/carles/repos/3d-environment/visuall_hull_extractor/calibration_images/calibration_image_4.jpg', cv2.IMREAD_GRAYSCALE)
+    cube_shilouette = cv2.imread('/home/carles/repos/3d-environment/visuall_hull_extractor/calibration_images/square_mask.png', cv2.IMREAD_GRAYSCALE)
     
     camera = Camera(position=[0.,5.,20.],
                         target = [.0,5.,.0],
@@ -247,8 +247,9 @@ def create_virtual_cameras_from_real_cameras(cam_intrisic_parameters, extrinsic_
                         rot_step = 0.,
                         shilouette=cube_shilouette,
                         shader = shader,
+                        # focal_length=[45,45]
                         )
-    camera_list.append(camera)
+    camera_list.append(camera) 
     camera = Camera(position=[20.,5.,0.],
                         target = [.0,5.,.0],
                         display_height=cam_height, 
@@ -307,21 +308,32 @@ class Frame:
         regular_vertex_shader = open('./visuall_hull_extractor/shaders/texture_vertex_shader.glsl','r').read()
         regular_fragment_shader = open('./visuall_hull_extractor/shaders/texture_fragment_shader.glsl','r').read()
         self.texture_shader = TextureShader(vertex_shader_source = regular_vertex_shader, fragment_shader_source = regular_fragment_shader)
+        
+        # create vhull texture shader program
+        regular_vertex_shader = open('./visuall_hull_extractor/shaders/vhull_texture_vertex_shader_.glsl','r').read()
+        regular_fragment_shader = open('./visuall_hull_extractor/shaders/vhull_texture_fragment_shader.glsl','r').read()
+        self.vhull_texture_shader = TextureShader(vertex_shader_source = regular_vertex_shader, fragment_shader_source = regular_fragment_shader)
 
         self.cam_intrinsc_params, self.cam_extrinsic_prmtrs_lst = load_real_cameras(force_recompute = True)
         self.camera_list = create_virtual_cameras_from_real_cameras(self.cam_intrinsc_params, self.cam_extrinsic_prmtrs_lst, shader = self.regular_shader)
-        self.camera_list.append(Camera(position=[0.0,world_size/2,-world_size/2], target=[0.0,world_size/2,world_size/2], has_to_render_image_plane=False))
+        self.camera_list.append(Camera(position=[0.0,world_size/2,world_size/2], target=[0.0,0.,0.], has_to_render_image_plane=False))
+        self.current_camera_index = 0
         self.current_camera_index = len(self.camera_list) - 1
 
 
-        self.vhull_vertex = model_voxel_space.get_voxel_centers_as_np_array()
         # self.vhull_vertex = np.array([-0.5,-0.5,0.0,0.5,0.5,-0.5],dtype=np.float32)
-        np.random.shuffle(self.vhull_vertex)
         # load vhull shaders code
         
+        self.vhull_vertex = model_voxel_space.get_voxel_centers_as_np_array()
+        # np.random.shuffle(self.vhull_vertex)
         self.scene = Scene()
         # create VHULL object
-        self.visual_hull = VHull(vhull_vertex = self.vhull_vertex, shader = self.vhull_shader, modeling_cameras = self.camera_list[0:2])
+        self.visual_hull = VHullTextured(
+            vhull_vertex = self.vhull_vertex,
+            modeling_cameras = self.camera_list[0:2],
+            shader = self.vhull_texture_shader, 
+            rendering_primitive=GL_POINTS,
+        )
 
         # Create Cube object
         self.scene.add_object('cube', create_cube_object(vertices,edges, color=[1.,1.,1.]))
@@ -466,9 +478,10 @@ class Frame:
 
         self.update_gl_matrices()
         
-        
+        '''
         new_image = self.web_cam.read()[1]
         self.scene.object_dict['image_plane'].update_texture_image(new_image, 1)
+        '''
 
 
         if self.print_modelview:
@@ -487,8 +500,9 @@ class Frame:
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
         # render each element
         self.scene.render()
-        self.visual_hull.short_render(viewing_camera = self.camera_list[-1], modeling_cameras = self.camera_list[0:-1])
         render_virtual_cameras(self.camera_list)
+        # self.visual_hull.short_render(viewing_camera = self.camera_list[-1], modeling_cameras = self.camera_list[0:-1])
+        self.visual_hull.render()
         # swap buffers i dont actualy know what this does but it seems necessary for the pipeline
         glutSwapBuffers()
 
@@ -521,7 +535,7 @@ class Frame:
         # set projection matrix
         glMatrixMode(GL_PROJECTION)
         glLoadIdentity()
-        gluPerspective(50, self.camera_list[self.current_camera_index].aspect_ratio, 0.1, 100.0)
+        gluPerspective(self.camera_list[self.current_camera_index].fov[1], self.camera_list[self.current_camera_index].aspect_ratio, 0.1, 100.0)
         
         # set modelview matrix (actualy just view matrix  model view is an identity matrix)
         glMatrixMode(GL_MODELVIEW)

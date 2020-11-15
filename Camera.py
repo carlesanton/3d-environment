@@ -24,13 +24,13 @@ class Camera:
         camera_rotation = None,
         camera_translation = None,
         camera_projection = None,
-        focal_length: np.array = np.array([1.2,1.2]),
+        focal_length: np.array = np.array([.6,.6]),
         display_width: int = 1200,
         display_height: int = 600,
         has_to_render: bool = True,
         has_to_render_image_plane: bool = True,
         has_to_render_axes: bool = True,
-        speed: float = 0.5,
+        speed: float = 0.25,
         rot_step: float = 0.025,
         shilouette = None,
         shader = None
@@ -85,9 +85,9 @@ class Camera:
 
     def compute_fov(self):
         self.fov = np.array([0.,0.])
-        self.fov[0] = 2. * np.arctan(self.display_width/(2.*self.focal_length[0]))
-        self.fov[1] = 2. * np.arctan(self.display_height/(2.*self.focal_length[1]))
-        self.fov = [50.,50.*self.aspect_ratio]
+        self.fov[0] = 2. * np.arctan(0.5*self.aspect_ratio/(self.focal_length[0]))
+        self.fov[1] = 2. * np.arctan(0.5/(self.focal_length[1]))
+        self.fov*= 360/( 2*np.pi)
 
     def get_view_matrix(self):
         return self.look_at_matrix(self.position, self.target, self.y_axis)
@@ -134,9 +134,9 @@ class Camera:
 
         # create translation and rotation matrix
         translation = Matrix44.identity()
-        translation[3][0] = -position.x
-        translation[3][1] = -position.y
-        translation[3][2] = -position.z
+        translation[0][3] = -position.x
+        translation[1][3] = -position.y
+        translation[2][3] = -position.z
 
         rotation = Matrix44.identity()
         rotation[0][0] = xaxis[0]
@@ -206,10 +206,10 @@ class Camera:
 
     def init_gl_image_plane_buffers(self):
         ofset = Vector3(self.position-self.z_axis*self.focal_length[0])
-        up_left_corner = ofset + self.x_axis*self.aspect_ratio + self.y_axis
-        up_right_corner = ofset - self.x_axis*self.aspect_ratio + self.y_axis
-        down_right_corner = ofset - self.x_axis*self.aspect_ratio - self.y_axis
-        down_left_corner = ofset + self.x_axis*self.aspect_ratio - self.y_axis
+        up_left_corner = ofset - self.x_axis*self.aspect_ratio/2. + self.y_axis/2.
+        up_right_corner = ofset + self.x_axis*self.aspect_ratio/2. + self.y_axis/2.
+        down_right_corner = ofset + self.x_axis*self.aspect_ratio/2. - self.y_axis/2.
+        down_left_corner = ofset - self.x_axis*self.aspect_ratio/2. - self.y_axis/2.
         
         # create vertices and colors array
         self.image_plane_vertices = np.array(np.hstack((up_left_corner, up_right_corner, down_right_corner, down_left_corner)),dtype = np.float32) 
@@ -223,10 +223,10 @@ class Camera:
 
     def init_gl_frustrum_buffers(self):
         ofset = Vector3(self.position-self.z_axis*self.focal_length[0])
-        up_left_corner = ofset + self.x_axis*self.aspect_ratio + self.y_axis
-        up_right_corner = ofset - self.x_axis*self.aspect_ratio + self.y_axis
-        down_right_corner = ofset - self.x_axis*self.aspect_ratio - self.y_axis
-        down_left_corner = ofset + self.x_axis*self.aspect_ratio - self.y_axis
+        up_left_corner = ofset + self.x_axis*self.aspect_ratio/2. + self.y_axis/2.
+        up_right_corner = ofset - self.x_axis*self.aspect_ratio/2. + self.y_axis/2.
+        down_right_corner = ofset - self.x_axis*self.aspect_ratio/2. - self.y_axis/2.
+        down_left_corner = ofset + self.x_axis*self.aspect_ratio/2. - self.y_axis/2.
     
         # create vertices and colors array
         self.frustrum_vertices = np.array(np.hstack((
