@@ -55,7 +55,7 @@ world_size = 50.0
 world_line_spacing = 4.0
 
 figure_render_size = 10.0
-figure_voxel_size = .1
+figure_voxel_size = .4
 
 current_camera_index = 0
 

@@ -16,6 +16,23 @@ def project_point(world_point):
 
     cam_point = camera_model_matrix.dot(Vector4.from_vector3(world_point, w= 1.))
     point_in_screen = projection_matrix.dot(cam_point)
+
+    aa = np.array([
+        2*point_in_screen[0]/image_size[0] + 0.5,
+        2*point_in_screen[1]/image_size[1] + 0.5,
+    ])
+
+    return aa
+
+if __name__ == "__main__":
+    print(project_point(np.array([0.,5.0,1.5])))
+    print(project_point(np.array([1.,5.0,1.5])))
+    print(project_point(np.array([10.,5.0,1.5])))
+    print(project_point(np.array([100.,5.0,1.5])))
+    print(project_point(np.array([1000.,5.0,1.5])))
+
+
+'''
     normalized_coordinate = np.array([
         cam_point[0] / cam_point[2], 
         cam_point[1] / cam_point[2],
@@ -33,10 +50,4 @@ def project_point(world_point):
         pixel_pos_in_cam[0]/image_size[0],
         pixel_pos_in_cam[1]/image_size[1],
     ])
-    return point_in_screen
-
-if __name__ == "__main__":
-    print(project_point(np.array([0.,5.0,1.5])))
-    print(project_point(np.array([1.,5.0,1.5])))
-    print(project_point(np.array([10.,5.0,1.5])))
-    print(project_point(np.array([100.,5.0,1.5])))
+'''
